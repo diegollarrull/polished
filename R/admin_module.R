@@ -110,7 +110,7 @@ admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
   body <- shinydashboard::dashboardBody(
     shiny::tags$head(
       tags$link(rel = "shortcut icon", href = "polish/images/polished_hex.png"),
-      tags$link(rel = "stylesheet", href = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"),
+      tags$link(rel = "stylesheet", href = "polish/css/toastr.min.css"),
       firebase_dependencies(),
       firebase_init(firebase_config)
     ),
@@ -130,10 +130,10 @@ admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
     tab_items,
 
 
-    tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
-    tags$script(src = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"),
+    tags$script(src = "polish/js/loadingoverlay.min.js"),
+    tags$script(src = "polish/js/toastr.min.js"),
     tags$script(src = "polish/js/all.js"),
-    tags$script(src = "https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"),
+    tags$script(src = "polish/js/js.cookie.min.js"),
     tags$script(src = "polish/js/auth-state.js"),
     tags$script(src = "polish/js/admin.js")
   )

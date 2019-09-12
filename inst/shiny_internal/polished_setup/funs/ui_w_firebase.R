@@ -11,12 +11,12 @@ ui_w_firebase <- function(ui, firebase_config, firebase_functions_url) {
   function(req) {
     tagList(
       tags$head(
-        tags$link(href = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js")
+        tags$link(href = "polish/js/toastr.min.js")
       ),
       ui,
       polished::firebase_dependencies(),
       polished::firebase_init(firebase_config),
-      tags$script(src = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"),
+      tags$script(src = "polish/js/toastr.min.js"),
       tags$script(src = "polished_setup.js")
     )
   }

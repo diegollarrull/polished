@@ -115,9 +115,9 @@ secure_ui <- function(
               ),
               firebase_dependencies(),
               firebase_init(firebase_config),
-              tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
+              tags$script(src = "polish/js/loadingoverlay.min.js"),
               tags$script(src = "polish/js/all.js"),
-          tags$script(src = "https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"),
+              tags$script(src = "polish/js/js.cookie.min.js"),
               tags$script(src = "polish/js/auth-state.js")
             )
           }
@@ -134,9 +134,9 @@ secure_ui <- function(
               ui,
               firebase_dependencies(),
               firebase_init(firebase_config),
-              tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
+              tags$script(src = "polish/js/loadingoverlay.min.js"),
               tags$script(src = "polish/js/all.js"),
-              tags$script(src = "https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"),
+              tags$script(src = "polish/js/js.cookie.min.js"),
               tags$script(src = "polish/js/auth-state.js")
             )
 

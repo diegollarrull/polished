@@ -11,8 +11,8 @@ verify_email_ui <- function(id, firebase_config) {
     tags$head(
       tags$link(rel = "stylesheet", href = "polish/css/all.css"),
       tags$link(rel = "shortcut icon", href = "polish/images/tychobra-icon-blue.png"),
-      tags$script(src = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"),
-      tags$link(rel = "stylesheet", href = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css")
+      tags$script(src = "polish/js/toastr.min.js"),
+      tags$link(rel = "stylesheet", href = "polish/css/toastr.min.css")
     ),
     fluidRow(
       column(
@@ -28,10 +28,10 @@ verify_email_ui <- function(id, firebase_config) {
       )
     ),
     firebase_dependencies(),
-    tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
+    tags$script(src = "polish/js/loadingoverlay.min.js"),
     firebase_init(firebase_config),
     tags$script(src = "polish/js/all.js"),
-    tags$script(src = "https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"),
+    tags$script(src = "polish/js/js.cookie.min.js"),
     tags$script(src = "polish/js/auth-state.js"),
     tags$script(src = "polish/js/verify_email.js")
   )

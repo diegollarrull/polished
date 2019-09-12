@@ -10,8 +10,8 @@ sign_in_ui <- function(firebase_config) {
     tags$head(
       tags$link(rel = "shortcut icon", href = "polish/images/tychobra-icon-blue.png"),
       # load toastr assets
-      tags$script(src = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"),
-      tags$link(rel = "stylesheet", href = "https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css")
+      tags$script(src = "polish/js/toastr.min.js"),
+      tags$link(rel = "stylesheet", href = "polish/css/toastr.min.css")
     ),
     div(
       id = "sign_in_panel",
@@ -193,11 +193,11 @@ sign_in_ui <- function(firebase_config) {
       )
     ),
 
-    tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
+    tags$script(src = "polish/js/loadingoverlay.min.js"),
     firebase_dependencies(),
     firebase_init(firebase_config),
     tags$script(src = "polish/js/all.js"),
-    tags$script(src = "https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"),
+    tags$script(src = "polish/js/js.cookie.min.js"),
     tags$script(src = "polish/js/auth-state.js"),
     tags$script(src = "polish/js/fetch.umd.js"), # polyfill for IE
     tags$script(src = "polish/js/auth.js")
