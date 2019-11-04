@@ -247,8 +247,9 @@ Sessions <-  R6::R6Class(
   ),
   private = list(
     add = function(session) {
-      print('add() session: ', session)
-      print('add() sessions: ', private$sessions)
+      print(list('add_session' = session))
+      print(list('add_sessions' = private$sessions))
+
       private$sessions[[session$token]] <- session
       invisible(self)
     },
