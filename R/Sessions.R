@@ -221,7 +221,7 @@ Sessions <-  R6::R6Class(
       invisible(self)
     },
     verify_email = function(oob_token) {
-      url_out <- paste0(self$firebase_functions_url, "sign_in_firebase")
+      url_out <- paste0(self$firebase_functions_url, "verify_email")
 
       user <- NULL
       tryCatch({
@@ -240,7 +240,7 @@ Sessions <-  R6::R6Class(
         print('error signing in')
         print(e)
       })
-      browser()
+      print(list('verify_email_user' = user))
       # TODO: update user's session email_verified property
       user
     },

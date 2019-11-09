@@ -82,7 +82,7 @@ secure_ui <- function(
         if (!is.null(oob_code)) {
           .global_sessions$verify_email(oob_code)
         }
-        browser()
+
         # go to email verification page
         # if email was verified with
         page_out <- tagList(
