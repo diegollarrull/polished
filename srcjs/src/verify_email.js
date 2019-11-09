@@ -13,4 +13,7 @@ $(document).on("click", "#resend_verification_email", () => {
     toastr.error("Error: " + error.message, null, toast_options)
     console.error("Error sending email verification", error)
   })
+
+
 })
+

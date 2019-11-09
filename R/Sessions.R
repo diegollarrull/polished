@@ -220,6 +220,30 @@ Sessions <-  R6::R6Class(
 
       invisible(self)
     },
+    verify_email = function(oob_token) {
+      url_out <- paste0(self$firebase_functions_url, "sign_in_firebase")
+
+      user <- NULL
+      tryCatch({
+        response <- httr::GET(
+          url_out,
+          query = list(
+            oob_token = oob_token
+          )
+        )
+
+        httr::warn_for_status(response)
+        user_text <- httr::content(response, "text")
+        user <- jsonlite::fromJSON(user_text)
+
+      }, error = function(e) {
+        print('error signing in')
+        print(e)
+      })
+      browser()
+      # TODO: update user's session email_verified property
+      user
+    },
     log_session = function(token, user_uid) {
 
       tryCatch({

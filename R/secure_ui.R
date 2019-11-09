@@ -76,7 +76,27 @@ secure_ui <- function(
 
     } else {
 
-      if (isTRUE(user$email_verified)) {
+      if (isFALSE(user$email_verified)) {
+
+        oob_code <- query$oobCode
+        if (!is.null(oob_code)) {
+          .global_sessions$verify_email(oob_code)
+        }
+        browser()
+        # go to email verification page
+        # if email was verified with
+        page_out <- tagList(
+          verify_email_ui(
+            "verify",
+            firebase_config
+          ),
+          tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
+          tags$script(src = "polish/js/polished_session.js"),
+          tags$script(paste0("polished_session('", user$token, "')"))
+        )
+
+
+      } else {
 
         if (isTRUE(user$is_admin)) {
 
@@ -114,21 +134,7 @@ secure_ui <- function(
           )
 
         } # end is_admin check
-      } else {
-        # email is not verified.
-        # go to email verification page
-
-        page_out <- tagList(
-          verify_email_ui(
-            "verify",
-            firebase_config
-          ),
-          tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
-          tags$script(src = "polish/js/polished_session.js"),
-          tags$script(paste0("polished_session('", user$token, "')"))
-        )
       }
-
 
     }
     page_out

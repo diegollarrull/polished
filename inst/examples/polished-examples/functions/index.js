@@ -1,7 +1,7 @@
 /*
 *
-* version 0.0.6
-* last updated 2019-09-24
+* version 0.0.7
+* last updated 2019-11-09
 * bump the above version and change the last updated date whenever a change
 * is made to this file
 *
@@ -57,4 +57,24 @@ exports.get_user = functions.https.onRequest(async (req, res) => {
     res.status(500).send(JSON.stringify(null))
   }
 
+})
+
+
+exports.verify_email = functions.https.onRequest(async (req, res) => {
+
+  const oob_code = req.query.oob_code
+
+  // the firebase user
+  let user = null
+  // the user object to return to the shiny app
+  try {
+    // verify the auth_token to sign the user into Shiny
+    user = await admin.auth().applyActionCode(oob_code)
+
+    res.status(200).send(JSON.stringify(user))
+
+  } catch(error) {
+    console.error("verify_email error: ", error)
+    res.status(500).send(null)
+  }
 })

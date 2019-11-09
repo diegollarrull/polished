@@ -1,4 +1,9 @@
-library(pgpolished)
+---
+title: 'Configure Polished'
+---
+
+```{r}
+library(polished)
 
 
 # function to set up database "polished" schema
@@ -27,6 +32,8 @@ create_app_user(
 
 # write and deploy the Firebase functions
 write_firebase_functions()
+```
+
 
 ```{bash}
 firebase deploy --only functions
