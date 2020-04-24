@@ -93,50 +93,50 @@ dashboard_module <- function(input, output, session) {
   #
   daily_user_sessions <- shiny::reactive({
 
-    hold_app_name = .global_sessions$app_name
+    hold_app_uid = .global_sessions$app_name
 
     start_date <- lubridate::today(tzone = "America/New_York") - lubridate::days(30)
 
-    # find all sessions for this app
-    dat_sessions <- .global_sessions$conn %>%
-      dplyr::tbl(dbplyr::in_schema("polished", "sessions")) %>%
-      dplyr::filter(.data$app_name == hold_app_name) %>%
-      dplyr::select(.data$user_uid, .data$email, .data$is_active, .data$uid) %>%
-      collect()
-
-    app_sessions <- dat_sessions$uid
-
-    dat_actions <- .global_sessions$conn %>%
-      dplyr::tbl(dbplyr::in_schema("polished", "session_actions")) %>%
-      dplyr::filter(
-        .data$action == "activate",
-        .data$timestamp >= start_date,
-        .data$session_uid %in% app_sessions
-      ) %>%
-      dplyr::select(.data$session_uid, .data$timestamp) %>%
-      dplyr::collect() %>%
-      dplyr::mutate(date = as.Date(.data$timestamp, tz = "America/New_York"))
-
-    dat <- dat_actions %>%
-      left_join(dat_sessions, by = c("session_uid" = "uid")) %>%
-      dplyr::group_by(.data$date, .data$user_uid) %>%
-      dplyr::summarize(n = dplyr::n()) %>%
-      dplyr::ungroup()
-
-    # make sure all days are included even if zero sessions in a day
-    first_day <- min(dat$date)
-
-    out <- tibble::tibble(
-      date = seq.Date(
-        from = first_day,
-        to = lubridate::today(tzone = "America/New_York"),
-        by = "day"
+    if (is.null(.global_sessions$api_key)) {
+      # find all sessions for this app
+      out <- get_daily_sessions(
+        .global_sessions$conn,
+        app_uid_ = hold_app_uid,
+        start_date = start_date,
       )
-    )
+    } else {
+      res <- httr::GET(
+        url = paste0(.global_sessions$hosted_url, "/daily-sessions"),
+        query = list(
+          app_uid = hold_app_uid
+        ),
+        httr::authenticate(
+          user = .global_sessions$api_key,
+          password = ""
+        )
+      )
 
-    out %>%
-      dplyr::left_join(dat, by = "date") %>%
-      mutate(n = ifelse(is.na(n), 0, n))
+      httr::stop_for_status(res)
+
+      out <- jsonlite::fromJSON(
+        httr::content(res, "text", encoding = "UTF-8")
+      )
+
+      if (length(out) == 0) {
+        out <- tibble::tibble(
+          date = as.Date(character(0)),
+          user_uid = character(0),
+          n = integer(0)
+        )
+      } else {
+        out <- out %>%
+          mutate(date = as.Date(date))
+      }
+
+    }
+
+
+    out
   })
 
   # returns a data frame with 2 columns
@@ -218,16 +218,35 @@ dashboard_module <- function(input, output, session) {
       Sys.time()
     },
     valueFunc = function() {
-      hold_app_name = .global_sessions$app_name
+      hold_app_uid = .global_sessions$app_name
 
-      .global_sessions$conn %>%
-        dplyr::tbl(dbplyr::in_schema("polished", "sessions")) %>%
-        dplyr::filter(
-          .data$app_name == hold_app_name,
-          .data$is_active == TRUE
+      if (is.null(.global_sessions$api_key)) {
+        out <- get_active_users(
+          .global_sessions$conn,
+          hold_app_uid
+        )
+
+      } else {
+        res <- httr::GET(
+          url = paste0(.global_sessions$hosted_url, "/active-users"),
+          query = list(
+            app_uid = hold_app_uid
+          ),
+          httr::authenticate(
+            user = .global_sessions$api_key,
+            password = ""
+          )
+        )
+
+        httr::stop_for_status(res)
+
+        out <- jsonlite::fromJSON(
+          httr::content(res, "text", encoding = "UTF-8")
         ) %>%
-        dplyr::distinct(.data$email) %>%
-        dplyr::collect()
+          tibble::as_tibble()
+      }
+
+      out
   })
 
 
@@ -254,7 +273,7 @@ dashboard_module <- function(input, output, session) {
     days <- nrow(daily_users)
 
     if (days < 7) {
-      current_date <- daily_users$date[[days]]
+      current_date <- lubridate::today(tzone = "America/New_York")
       past_week <- dplyr::tibble(
         date = current_date - c(6, 5, 4, 3, 2, 1, 0)
       )
@@ -275,7 +294,7 @@ dashboard_module <- function(input, output, session) {
 
   output$daily_users_chart <- apexcharter::renderApexchart({
     dat <- daily_users_chart_prep()
-
+    
     ax_out <- apexcharter::apexchart() %>%
       apexcharter::ax_title(
         "Unique Daily Users",
@@ -309,6 +328,7 @@ dashboard_module <- function(input, output, session) {
         )
       ) %>%
       apexcharter::ax_xaxis(
+        type = 'datetime',
         categories = dat$date_out
       ) %>%
       apexcharter::ax_stroke(show = TRUE, curve = "straight") %>%
@@ -360,6 +380,7 @@ dashboard_module <- function(input, output, session) {
   )
 
   output$active_users_table <- DT::renderDT({
+    req(length(poll_global_users()) > 0)
     out <- poll_global_users()
 
     DT::datatable(

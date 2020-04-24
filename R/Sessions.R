@@ -1,422 +1,738 @@
 
+api_get_invite_by_email <- function(url, api_key, email, app_uid) {
 
-#' Sessions
+
+  res <- httr::GET(
+    url = paste0(url, "/invite-by-email"),
+    query = list(
+      email = email,
+      app_uid = app_uid
+    ),
+    httr::authenticate(
+      user = api_key,
+      password = ""
+    )
+  )
+
+  httr::stop_for_status(res)
+
+  invite <- jsonlite::fromJSON(
+    httr::content(res, "text", encoding = "UTF-8")
+  )
+
+  # API returns a length 0 list when there is no invite
+  if (length(invite) == 0) {
+    invite <- NULL
+  }
+
+  invite
+}
+
+api_get_invite <- function(url, api_key, app_uid, user_uid) {
+  res <- httr::GET(
+    url = paste0(url, "/invites"),
+    query = list(
+      app_uid = app_uid,
+      user_uid = user_uid
+    ),
+    httr::authenticate(
+      user = api_key,
+      password = ""
+    )
+  )
+
+  httr::stop_for_status(res)
+
+  invite <- jsonlite::fromJSON(
+    httr::content(res, "text", encoding = "UTF-8")
+  )
+
+  # API returns a length 0 list when there is no invite
+  if (length(invite) == 0) {
+    invite <- NULL
+  }
+
+  invite
+}
+
+#' R6 class to track polished sessions
 #'
-#' R6 class to track the polished sessions
+#' @description
+#' An instance of this class handles the polished user sessions for each Shiny
+#' app using polished.  The Shiny developer should not need to interact with
+#' this class directly.
 #'
 #' @export
 #'
 #' @importFrom R6 R6Class
-#' @importFrom httr GET content warn_for_status
+#' @importFrom httr GET content warn_for_status POST
 #' @importFrom jsonlite fromJSON
 #' @importFrom digest digest
-#' @importFrom DBI dbGetQuery dbWithTransaction dbExecute
+#' @importFrom DBI dbGetQuery dbWithTransaction dbExecute dbIsValid
+#' @importFrom jose jwt_decode_sig
+#' @importFrom lubridate with_tz minutes
+#'
 #'
 Sessions <-  R6::R6Class(
   classname = 'Sessions',
   public = list(
+    hosted_url = character(0),
     app_name = character(0),
-    firebase_functions_url = character(0),
     conn = NULL,
-    # Session configuration function.  This must be executed in global.R of the Shiny app.
-    #
-    # @param app_name the name of the app
-    # @param firebase_functions_url the firebase function url
-    # @param conn the database connection
-    # @param authorization_level whether the app should be accessible to "all" users in the
-    # "polished.users" table, or if it should only be accessible to users as defined in the
-    # "app_users" table. Valid options are "app" or "all".  Defaults to "app".
-    #
+    firebase_config = NULL,
+    is_invite_required = TRUE,
+    api_key = NULL,
+    #' @description
+    #' polished Sessions configuration function
+    #'
+    #' @details
+    #' This function is called via `global_sessions_config()` in global.R
+    #' of all Shiny apps using polished.
+    #'
+    #' @inheritParams global_sessions_config
+    #'
     config = function(
       app_name,
-      firebase_functions_url = NULL,
       conn = NULL,
-      authorization_level = 'app'
+      firebase_config = NULL,
+      admin_mode = FALSE,
+      is_invite_required = TRUE,
+      api_key = NULL,
+      api_version = "prod"
     ) {
 
-      self$app_name <- app_name
-      self$firebase_functions_url <- firebase_functions_url
-      self$conn <- conn
-      private$authorization_level <- authorization_level
+      if (!(length(app_name) == 1 && is.character(app_name))) {
+        stop("invalid `app_name` argument passed to `global_sessions_config()`", call. = FALSE)
+      }
 
-      invisible(self)
-    },
-    sign_in = function(firebase_token, token) {
-      conn <- self$conn
-      # firebase function callable via url
-      url_out <- paste0(self$firebase_functions_url, "sign_in_firebase")
 
-      user <- NULL
-      tryCatch({
-        response <- httr::GET(
-          url_out,
+      if (is.null(api_key)) {
+
+        # user is setting up their own database and Firebase project
+        if (length(firebase_config) != 3 ||
+            !all(names(firebase_config) %in% c("apiKey", "authDomain", "projectId"))) {
+          stop("invalid `firebase_config` argument passed to `global_sessions_config()`", call. = FALSE)
+        }
+        tryCatch({
+          if (!DBI::dbIsValid(conn)) {
+            stop("invalid `conn` argument passed to `global_sessions_config()`", call. = FALSE)
+          }
+        }, error = function(err) {
+          stop("invalid `conn` argument passed to `global_sessions_config()`", call. = FALSE)
+        })
+
+        self$conn <- conn
+        self$firebase_config <- firebase_config
+        self$app_name <- app_name
+        self$api_key <- NULL
+      } else {
+        # user is using polished hosted API
+        if (!(length(api_key) == 1 && is.character(api_key))) {
+          stop("invalid `app_name` argument passed to `global_sessions_config()`", call. = FALSE)
+        }
+
+        if (identical(api_version, "prod")) {
+          self$hosted_url <- "https://api.polished.tech"
+        } else if (identical(api_version, "dev")) {
+          self$hosted_url <- "https://api-dev.polished.tech"
+        } else {
+          stop("invalid `api_version` argument passed to `global_sessions_config()`", call. = FALSE)
+        }
+
+        if (!is.null(conn)) {
+          stop("when `api_key` is provided `conn` must be set to `NULL`", call. = FALSE)
+        }
+
+        self$conn <- NULL
+        self$api_key <- api_key
+
+        if (is.null(firebase_config)) {
+          # set to the default polished Firebase project if app is using polished
+          # hosted, but no Firebase credentials provided.  This allows users to get up and
+          # running quickly without needing to create a Firebase project, but for
+          # production Shiny apps, the user should
+          self$firebase_config <- list(
+            apiKey = "AIzaSyAlrehX1g0irhCKq5MfmOE96z8lNprbbnk",
+            authDomain = "polished-hosted.firebaseapp.com",
+            projectId = "polished-hosted"
+          )
+
+        } else {
+          if (length(firebase_config) != 3 ||
+              !all(names(firebase_config) %in% c("apiKey", "authDomain", "projectId"))) {
+            stop("invalid `firebase_config` argument passed to `global_sessions_config()`", call. = FALSE)
+          }
+          self$firebase_config <- firebase_config
+        }
+
+
+
+        # get the app uid
+        res <- httr::GET(
+          url = paste0(self$hosted_url, "/app-by-name"),
           query = list(
-            token = firebase_token
+            app_name = app_name
+          ),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
           )
         )
 
-        httr::warn_for_status(response)
-        user_text <- httr::content(response, "text")
-        user <- jsonlite::fromJSON(user_text)
+        httr::stop_for_status(res)
 
-      }, error = function(e) {
-        print('error signing in')
-        print(e)
-      })
+        app <- jsonlite::fromJSON(
+          httr::content(res, "text", encoding = "UTF-8")
+        )
+
+        if (is.null(app$app_uid)) {
+          stop("app not found in polished hosted")
+        }
+
+        self$app_name <- app$app_uid
+
+      }
+
+
+      if (!(length(admin_mode) == 1 && is.logical(admin_mode))) {
+        stop("invalid `admin_mode` argument passed to `global_sessions_config()`", call. = FALSE)
+      }
+      if (!(length(is_invite_required) == 1 && is.logical(is_invite_required))) {
+        stop("invalid `is_invite_required` argument passed to `global_sessions_config()`", call. = FALSE)
+      }
+
+
+      private$admin_mode <- admin_mode
+      self$is_invite_required <- is_invite_required
+
+      private$refresh_jwt_pub_key()
+
+      invisible(self)
+    },
+
+
+    #' @description
+    #' verify the users Firebase JWT and store the session
+    #'
+    #' @param firebase_token the Firebase JWT.  This JWT is created client side
+    #' (in JavaScript) via `firebase.auth()`.
+    #' @param hashed_cookie the hashed polished cookie.  Used for tracking the user
+    #' session.  This cookie is inserted into the "polished.sessions" table if the
+    #' JWT is valid.
+    #'
+    #' @return NULL if sign in fails. If sign in is successful, a list containing the following:
+    #' * email
+    #' * email_verified
+    #' * is_admin
+    #' * user_uid
+    #' * hashed_cookie
+    #' * session_uid
+    #' @md
+    #'
+    #'
+    sign_in = function(firebase_token, hashed_cookie) {
+
+      decoded_jwt <- NULL
+
+
+      # check if the jwt public key has expired or if it is about to expire.  If it
+      # is about to epire, go ahead and refresh to be safe.
+      if (as.numeric(Sys.time()) + private$firebase_token_grace_period_seconds > private$jwt_pub_key_expires) {
+        private$refresh_jwt_pub_key()
+      }
+
+      decoded_jwt <- private$verify_firebase_token(firebase_token)
 
 
       new_session <- NULL
 
-      if (!is.null(user)) {
+      if (!is.null(decoded_jwt)) {
 
         new_session <- list(
-          email = user$email,
-          firebase_uid = user$user_id,
-          email_verified = user$email_verified
+          email = decoded_jwt$email,
+          email_verified = decoded_jwt$email_verified
         )
 
-        tryCatch({
-          # confirm that user is invited
-          invite <- self$get_invite_by_email(new_session$email)
-
-          # find the users roles
-          roles_out <- self$get_roles(invite$user_uid)
-
-          new_session$is_admin <- invite$is_admin
-          new_session$user_uid <- invite$user_uid
-          new_session$roles <- roles_out
-
-        }, error = function(e) {
-
-          print(e)
-          new_session <<- NULL
-        })
 
 
+        if (is.null(self$api_key)) {
+          invite <- self$get_invite_by_email(decoded_jwt$email)
+          if (isFALSE(self$is_invite_required) && is.null(invite)) {
+            # if invite is not required, and this is the first time that the user is signing in,
+            # then we need to add their user info to the db
+            create_app_user(self$conn, self$app_name, decoded_jwt$email)
+            invite <- self$get_invite_by_email(new_session$email)
+          }
 
-        new_session$token <- token
-        new_session$session_uid <- create_uid()
+          if (is.null(invite)) {
+            stop("[polished] error checking user invite")
+          }
+        } else {
+          invite <- api_get_invite_by_email(
+            self$hosted_url,
+            self$api_key,
+            new_session$email,
+            self$app_name
+          )
+
+          if (length(invite) == 0) invite <- NULL
+
+          if (isFALSE(self$is_invite_required) && is.null(invite)) {
+            # if invite is not required, and this is the first time that the user is signing in,
+            # then create the app_users
+            res <- httr::POST(
+              url = paste0(.global_sessions$hosted_url, "/app-users"),
+              body = list(
+                email = new_session$email,
+                app_uid = self$app_name,
+                is_admin = FALSE
+              ),
+              httr::authenticate(
+                user = .global_sessions$api_key,
+                password = ""
+              ),
+              encode = "json"
+            )
+
+            httr::stop_for_status(res)
+
+            invite <- api_get_invite_by_email(
+              self$hosted_url,
+              self$api_key,
+              new_session$email,
+              self$app_name
+            )
+            if (length(invite) == 0) invite <- NULL
+          }
+
+          if (is.null(invite)) {
+            stop("[polished] error checking user invite")
+          }
+        }
+
+        new_session$is_admin <- invite$is_admin
+        new_session$user_uid <- invite$user_uid
+
+
+        new_session$hashed_cookie <- hashed_cookie
+        new_session$session_uid <- uuid::UUIDgenerate()
         # add the session to the 'sessions' table
         private$add(new_session)
-      }
 
-      dbExecute(
-        self$conn,
-        "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
-        list(
-          create_uid(),
-          new_session$session_uid,
-          'sign_in'
-        )
-      )
+        if (is.null(self$api_key)) {
+          dbExecute(
+            self$conn,
+            "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
+            list(
+              uuid::UUIDgenerate(),
+              new_session$session_uid,
+              'sign_in'
+            )
+          )
+        }
+
+      }
 
       return(new_session)
     },
     get_invite_by_email = function(email) {
 
       invite <- NULL
-      DBI::dbWithTransaction(self$conn, {
 
-        user_db <- DBI::dbGetQuery(
-          self$conn,
-          "SELECT * FROM polished.users WHERE email=$1",
-          params = list(
-            email
-          )
-        )
+      if (is.null(self$api_key)) {
 
-        if (nrow(user_db) != 1) {
-          stop(sprintf('unable to find "%s" in "users" table', email))
+
+        user_db <- get_user_by_email(self$conn, email)
+
+        if (!is.null(user_db)) {
+          invite <- get_invite(self$conn, self$app_name, user_db$uid)
         }
 
-        invite <- self$get_invite_by_uid(user_db$uid)
-      })
+
+      } else {
+        invite <- api_get_invite_by_email(
+          self$hosted_url,
+          self$api_key,
+          email,
+          self$app_name
+        )
+      }
+
+
 
       return(invite)
     },
-    get_invite_by_uid = function(user_uid) {
+    find = function(hashed_cookie) {
+      if (nchar(hashed_cookie) == 0) return(NULL)
 
-      if (private$authorization_level == "app") {
-        # authorization for this user is set at the Shiny app level, so only check this specific app
-        # to see if the user is authorized
-        invite <- DBI::dbGetQuery(
-          self$conn,
-          "SELECT * FROM polished.app_users WHERE user_uid=$1 AND app_name=$2",
-          params = list(
-            user_uid,
-            self$app_name
-          )
-        )
-      } else if (private$authorization_level == "all") {
-        # if user is authoized to access any apps, they can access this app.
-        # e.g. used for apps_dashboards where we want all users that are allowed to access any app to
-        # be able to access the dashboard.
-        invite <- DBI::dbGetQuery(
-          self$conn,
-          "SELECT * FROM polished.app_users WHERE user_uid=$1 LIMIT 1",
-          params = list(
-            user_uid
-          )
-        )
-      }
+      if (is.null(self$api_key)) {
 
-      if (nrow(invite) != 1) {
-        stop(sprintf('user "%s" is not authoized to access "%s"', email, self$app_name))
-      }
+        session_out <- get_session(self$conn, hashed_cookie, self$app_name)
 
-      invite
-    },
-    # return a character vector of the user's roles
-    get_roles = function(user_uid) {
-      roles <- character(0)
-      DBI::dbWithTransaction(self$conn, {
+      } else {
 
-
-        role_names <- DBI::dbGetQuery(
-          self$conn,
-          "SELECT uid, name FROM polished.roles WHERE app_name=$1",
-          params = list(
-            self$app_name
+        res <- httr::GET(
+          url = paste0(self$hosted_url, "/session-by-cookie"),
+          query = list(
+            hashed_cookie = hashed_cookie,
+            app_uid = self$app_name
+          ),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
           )
         )
 
-        role_uids <- DBI::dbGetQuery(
-          self$conn,
-          "SELECT role_uid FROM polished.user_roles WHERE user_uid=$1 AND app_name=$2",
-          params = list(
-            user_uid,
-            self$app_name
-          )
-        )$role_uid
+        httr::stop_for_status(res)
 
-        roles <- role_names %>%
-          dplyr::filter(uid %in% role_uids) %>%
-          dplyr::pull(name)
-      })
-
-      roles
-    },
-    find = function(token) {
-
-      signed_in_sessions <- dbGetQuery(
-        self$conn,
-        'SELECT uid AS session_uid, user_uid, email, email_verified, firebase_uid, app_name, signed_in_as FROM polished.sessions WHERE token=$1 AND is_signed_in=$2',
-        params = list(
-          token,
-          TRUE
-        )
-      )
-
-      session_out <- NULL
-      if (nrow(signed_in_sessions) > 0) {
-
-
-
-        # confirm that user is invited
-        invite <- self$get_invite_by_uid(signed_in_sessions$user_uid[1])
-        roles <- self$get_roles(signed_in_sessions$user_uid[1])
-
-        app_session <- signed_in_sessions %>%
-          filter(.data$app_name == self$app_name)
-
-        # if user is not invited, the above `get_invite_by_uid()` function will throw an error.  If user is invited,
-        # return the user session
-
-
-        session_out <- list(
-          "user_uid" = signed_in_sessions$user_uid[1],
-          "email" = signed_in_sessions$email[1],
-          "firebase_uid" = signed_in_sessions$firebase_uid[1],
-          "email_verified" = signed_in_sessions$email_verified[1],
-          "is_admin" = invite$is_admin,
-          "roles" = roles,
-          "token" = token
+        session_out <- jsonlite::fromJSON(
+          httr::content(res, "text", encoding = "UTF-8")
         )
 
-
-        if (nrow(app_session) == 0) {
-          # user was signed into another app and came over to this app, so add a session for this app
-          session_out$session_uid <- create_uid()
-
-          private$add(session_out)
-          session_out$signed_in_as <- NA
-        } else if (nrow(app_session) == 1) {
-
-          session_out$session_uid <- app_session$session_uid
-          session_out$signed_in_as <- app_session$signed_in_as
-        } else {
-          stop('error: too many sessions')
+        if (length(session_out) == 0) {
+          session_out <- NULL
         }
+
       }
 
       return(session_out)
     },
-    list = function() {
+    refresh_email_verification = function(session_uid, firebase_token) {
 
-      out <- dbGetQuery(
-        self$conn,
-        "SELECT * FROM polished.active_sessions"
-      )
+      email_verified <- NULL
+      tryCatch({
 
-      return(out)
-    },
-    refresh_email_verification = function(session_uid, firebase_uid) {
+        # check if the jwt public key has expired.  Add an extra minute to the
+        # current time for padding before checking if the key has expired.
+        if (Sys.time() + private$firebase_token_grace_period_seconds >
+            private$jwt_pub_key_expires) {
+          private$refresh_jwt_pub_key()
+        }
 
-      url_out <- paste0(self$firebase_functions_url, "get_user")
-      response <- httr::GET(
-        url_out,
-        query = list(
-          uid = firebase_uid
-        )
-      )
-      httr::warn_for_status(response)
-      email_verified_text <- httr::content(response, "text")
-      email_verified <- jsonlite::fromJSON(email_verified_text)
+        decoded_jwt <- private$verify_firebase_token(firebase_token)
 
-      dbExecute(
-        self$conn,
-        'UPDATE polished.sessions SET email_verified=$1 WHERE uid=$2',
-        params = list(
-          email_verified,
-          session_uid
-        )
-      )
+        if (!is.null(decoded_jwt)) {
+          email_verified <- decoded_jwt$email_verified
+        }
+
+      }, error = function(e) {
+        print('[polished] error signing in')
+        print(e)
+      })
+
+      if (is.null(email_verified)) {
+        stop("email verification user not found")
+      } else {
+
+        if (is.null(self$api_key)) {
+          dbExecute(
+            self$conn,
+            'UPDATE polished.sessions SET email_verified=$1 WHERE uid=$2',
+            params = list(
+              email_verified,
+              session_uid
+            )
+          )
+        } else {
+          res <- httr::PUT(
+            url = paste0(self$hosted_url, "/sessions"),
+            httr::authenticate(
+              user = self$api_key,
+              password = ""
+            ),
+            body = list(
+              session_uid = session_uid,
+              dat = list(
+                email_verified = email_verified
+              )
+            ),
+            encode = "json"
+          )
+
+          httr::stop_for_status(res)
+        }
+
+      }
+
 
       invisible(self)
     },
-    set_signed_in_as = function(token, signed_in_as) {
+    set_signed_in_as = function(session_uid, signed_in_as) {
 
-      dbExecute(
-        self$conn,
-        'UPDATE polished.sessions SET signed_in_as=$1 WHERE token=$2 AND app_name=$3',
-        params = list(
-          signed_in_as$uid,
-          token,
-          self$app_name
+      if (is.null(self$api_key)) {
+        dbExecute(
+          self$conn,
+          'UPDATE polished.sessions SET signed_in_as=$1 WHERE uid=$2',
+          params = list(
+            signed_in_as,
+            session_uid
+          )
         )
-      )
-
-      invisible(self)
-    },
-    clear_signed_in_as = function(token) {
-
-      dbExecute(
-        self$conn,
-        'UPDATE polished.sessions SET signed_in_as=$1 WHERE token=$2 AND app_name=$3',
-        params = list(
-          NA,
-          token,
-          self$app_name
+      } else {
+        res <- httr::PUT(
+          url = paste0(self$hosted_url, "/sessions"),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
+          ),
+          body = list(
+            session_uid = session_uid,
+            dat = list(
+              signed_in_as = signed_in_as
+            )
+          ),
+          encode = "json"
         )
-      )
+
+        httr::stop_for_status(res)
+      }
+
 
       invisible(self)
     },
     get_signed_in_as_user = function(user_uid) {
 
-      email <- dbGetQuery(
-        self$conn,
-        'SELECT email FROM polished.users WHERE uid=$1',
-        list(
+      if (is.null(self$api_key)) {
+        email <- dbGetQuery(
+          self$conn,
+          'SELECT email FROM polished.users WHERE uid=$1',
+          list(
+            user_uid
+          )
+        )$email
+
+        invite <- get_invite(
+          self$conn,
+          self$app_name,
           user_uid
         )
-      )$email
+      } else {
 
-      invite <- self$get_invite_by_uid(user_uid)
+        invite <- api_get_invite(
+          self$hosted_url,
+          self$api_key,
+          self$app_name,
+          user_uid
+        )
 
-      roles <- self$get_roles(user_uid)
+        email <- invite$email
+      }
+
 
       list(
         user_uid = user_uid,
         email = email,
-        is_admin = invite$is_admin,
-        roles = roles
+        is_admin = invite$is_admin
       )
     },
     set_inactive = function(session_uid) {
 
-      dbExecute(
-        self$conn,
-        'UPDATE polished.sessions SET is_active=$1 WHERE uid=$2',
-        list(
-          FALSE,
-          session_uid
+      if (is.null(self$api_key)) {
+        dbExecute(
+          self$conn,
+          'UPDATE polished.sessions SET is_active=$1 WHERE uid=$2',
+          list(
+            FALSE,
+            session_uid
+          )
         )
-      )
 
-      dbExecute(
-        self$conn,
-        "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
-        list(
-          create_uid(),
-          session_uid,
-          'deactivate'
+        dbExecute(
+          self$conn,
+          "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
+          list(
+            uuid::UUIDgenerate(),
+            session_uid,
+            'deactivate'
+          )
         )
-      )
+      } else {
+
+        res <- httr::POST(
+          url = paste0(self$hosted_url, "/actions"),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
+          ),
+          body = list(
+            type = "set_inactive",
+            session_uid = session_uid
+          ),
+          encode = "json"
+        )
+
+        httr::stop_for_status(res)
+
+      }
 
     },
     set_active = function(session_uid) {
-      dbExecute(
-        self$conn,
-        'UPDATE polished.sessions SET is_active=$1 WHERE uid=$2',
-        list(
-          TRUE,
+
+      if (is.null(self$api_key)) {
+        dbExecute(
+          self$conn,
+          'UPDATE polished.sessions SET is_active=$1 WHERE uid=$2',
+          list(
+            TRUE,
+            session_uid
+          )
+        )
+
+        dbExecute(
+          self$conn,
+          "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
+          list(
+            uuid::UUIDgenerate(),
+            session_uid,
+            'activate'
+          )
+        )
+      } else {
+        res <- httr::POST(
+          url = paste0(self$hosted_url, "/actions"),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
+          ),
+          body = list(
+            type = "set_active",
+            session_uid = session_uid
+          ),
+          encode = "json"
+        )
+
+        httr::stop_for_status(res)
+      }
+
+    },
+    sign_out = function(hashed_cookie, session_uid) {
+
+      if (is.null(self$api_key)) {
+
+        sign_out(
+          self$conn,
+          hashed_cookie,
           session_uid
         )
-      )
 
-      dbExecute(
-        self$conn,
-        "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
-        list(
-          create_uid(),
-          session_uid,
-          'activate'
+      } else {
+
+        res <- httr::POST(
+          url = paste0(self$hosted_url, "/sign-out"),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
+          ),
+          body = list(
+            hashed_cookie = hashed_cookie,
+            session_uid = session_uid
+          ),
+          encode = "json"
         )
-      )
+
+        httr::stop_for_status(res)
+      }
+
     },
-    sign_out = function(user_uid, session_uid) {
-      dbExecute(
-        self$conn,
-        'UPDATE polished.sessions SET is_active=$1, is_signed_in=$2 WHERE user_uid=$3',
-        list(
-          FALSE,
-          FALSE,
-          user_uid
-        )
-      )
-
-      dbExecute(
-        self$conn,
-        "INSERT INTO polished.session_actions (uid, session_uid, action) VALUES ($1, $2, $3)",
-        list(
-          create_uid(),
-          session_uid,
-          'sign_out'
-        )
-      )
+    get_admin_mode = function() {
+      private$admin_mode
     }
   ),
   private = list(
-    add = function(session) {
+    add = function(session_data) {
 
-      dbExecute(
-        self$conn,
-        'INSERT INTO polished.sessions (uid, user_uid, firebase_uid, email, email_verified, token, app_name) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        list(
-          session$session_uid,
-          session$user_uid,
-          session$firebase_uid,
-          session$email,
-          session$email_verified,
-          session$token,
-          self$app_name
+      if (is.null(self$api_key)) {
+        add_session(self$conn, session_data, self$app_name)
+      } else {
+
+        # add session to "sessions" table via the API
+        httr::POST(
+          url = paste0(self$hosted_url, "/sessions"),
+          httr::authenticate(
+            user = self$api_key,
+            password = ""
+          ),
+          body = list(
+            data = session_data,
+            app_uid = self$app_name
+          ),
+          encode = "json"
         )
-      )
+      }
 
       invisible(self)
     },
-    authorization_level = "app" # or "all"
+    refresh_jwt_pub_key = function() {
+      google_keys_resp <- httr::GET("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com")
+
+      # Error if we didn't get the keys successfully
+      httr::stop_for_status(google_keys_resp)
+
+      private$jwt_pub_key <- jsonlite::fromJSON(
+        httr::content(google_keys_resp, "text", encoding = "UTF-8")
+      )
+
+
+      # Decode the expiration time of the keys from the Cache-Control header
+      cache_controls <- httr::headers(google_keys_resp)[["Cache-Control"]]
+      if (!is.null(cache_controls)) {
+        cache_control_elems <- strsplit(cache_controls, ",")[[1]]
+        split_equals <- strsplit(cache_control_elems, "=")
+        for (elem in split_equals) {
+
+          if (length(elem) == 2 && trimws(elem[1]) == "max-age") {
+            max_age <- as.numeric(elem[2])
+            private$jwt_pub_key_expires <- as.numeric(Sys.time()) + max_age
+            break
+          }
+
+        }
+      }
+    },
+    jwt_pub_key = NULL,
+    # number of seconds that the public key will remain valid
+    jwt_pub_key_expires = NULL,
+    verify_firebase_token = function(firebase_token) {
+      # Google sends us 2 public keys to authenticate the JWT.  Sometimes the correct
+      # key is the first one, and sometimes it is the second.  I do not know how
+      # to tell which key is the right one to use, so we try them both for now.
+      decoded_jwt <- NULL
+      for (key in private$jwt_pub_key) {
+        # If a key isn't the right one for the Firebase token, then we get an error.
+        # Ignore the errors and just don't set decoded_token if there's
+        # an error. When we're done, we'll look at the the decoded_token
+        # to see if we found a valid key.
+        try({
+          decoded_jwt <- jose::jwt_decode_sig(firebase_token, key)
+          break
+        }, silent=TRUE)
+      }
+
+      if (is.null(decoded_jwt)) {
+        stop("[polished] error decoding JWT")
+      }
+
+      curr_time <- as.numeric(Sys.time())
+      # Verify the ID token
+      # https://firebase.google.com/docs/auth/admin/verify-id-tokens
+      if (!(as.numeric(decoded_jwt$exp) + private$firebase_token_grace_period_seconds > curr_time &&
+            as.numeric(decoded_jwt$iat) < curr_time + private$firebase_token_grace_period_seconds &&
+            as.numeric(decoded_jwt$auth_time) < curr_time + private$firebase_token_grace_period_seconds &&
+            decoded_jwt$aud == self$firebase_config$projectId &&
+            decoded_jwt$iss == paste0("https://securetoken.google.com/", self$firebase_config$projectId) &&
+            nchar(decoded_jwt$sub) > 0)) {
+
+        stop("[polished] error verifying JWT")
+      }
+
+      decoded_jwt
+    },
+    # Grace period to allow for clock skew between our clock and the server that generates the
+    # firebase tokens.
+    firebase_token_grace_period_seconds = 300,
+    # when `admin_mode == TRUE` the user will be taken directly to the admin panel and signed in
+    # as a special "admin" user.
+    admin_mode = FALSE
   )
 )
 

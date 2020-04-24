@@ -1,9 +1,11 @@
 #' admin_ui
 #'
 #' @param id the Shiny module id
-#' @param firebase_config list of Firebase config
 #' @param custom_admin_ui Either `NULL`, the default, or a list of 2 elements containing custom
 #' ui to add addtional `shinydashboard` tabs to the Polished admin panel.
+#' @param options list of html elements to customize branding of Admin Panel.
+#' @param include_go_to_shiny_app_button whether or not to include the button to go to
+#' the Shiny app.  This argument is set to `FALSE` when `polished` is in "admin_mode".
 #'
 #' @importFrom shiny NS icon
 #' @importFrom shinydashboard dashboardHeader dashboardSidebar dashboardBody dashboardPage sidebarMenu menuItem tabItems
@@ -11,29 +13,16 @@
 #'
 #' @export
 #'
-admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
+admin_module_ui <- function(id, custom_admin_ui = NULL,
+  options = default_admin_ui_options(),
+  include_go_to_shiny_app_button = TRUE
+) {
   ns <- shiny::NS(id)
 
   stopifnot(is.null(custom_admin_ui) || names(custom_admin_ui) == c("menu_items", "tab_items"))
 
   head <- shinydashboard::dashboardHeader(
-    title = shiny::titlePanel(
-      htmltools::HTML(
-        paste0(
-          tags$a(
-            href = "https://polished.tychobra.com",
-            tags$img(
-              src="polish/images/polished_hex.png",
-              height = "50px",
-              alt = "Polished Logo",
-              style = "margin-top: -20px; float: left;"
-            )
-          ),
-          tags$span("Polished", style='float: left; font-size: 37px !important; margin-top: -14px !important; margin-left: 10px; padding-top: 0 !important;')
-        )
-      ),
-      windowTitle = "Polished"
-    ),
+    title = options$title,
     profile_module_ui(ns("polish__profile"))
   )
 
@@ -53,13 +42,7 @@ admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
         ),
 
 
-        tags$a(
-          href = "https://www.tychobra.com/",
-          tags$img(
-            style = "position: fixed; bottom: 0; left: 0; width: 230px;",
-            src = "polish/images/tychobra_logo_blue_co_name.png"
-          )
-        )
+        options$sidebar_branding
       )
     )
   } else {
@@ -79,13 +62,7 @@ admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
 
         custom_admin_ui$menu_items,
 
-        tags$a(
-          href = "https://www.tychobra.com/",
-          tags$img(
-            style = "position: fixed; bottom: 0; left: 0; width: 230px;",
-            src = "polish/images/tychobra_logo_blue_co_name.png"
-          )
-        )
+        options$sidebar_branding
       )
     )
   }
@@ -104,17 +81,8 @@ admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
     )
   }
 
-
-  body <- shinydashboard::dashboardBody(
-    htmltools::tags$head(
-      tags$link(rel = "shortcut icon", href = "polish/images/polished_hex.png"),
-      firebase_dependencies(),
-      firebase_init(firebase_config)
-    ),
-    shinyjs::useShinyjs(),
-    shinytoastr::useToastr(),
-
-    div(
+  if (isTRUE(include_go_to_shiny_app_button)) {
+    shiny_app_button <- div(
       style = "position: fixed; bottom: 15px; right: 15px; z-index: 1000;",
       actionButton(
         ns("go_to_shiny_app"),
@@ -123,12 +91,23 @@ admin_module_ui <- function(id, firebase_config, custom_admin_ui = NULL) {
         class = "btn-primary btn-lg",
         style = "color: #FFFFFF;"
       )
+    )
+  } else {
+    shiny_app_button <- div()
+  }
+
+
+
+  body <- shinydashboard::dashboardBody(
+    htmltools::tags$head(
+      options$browser_tab_icon
     ),
+    shinyjs::useShinyjs(),
+    shinytoastr::useToastr(),
 
-    tab_items,
+    shiny_app_button,
 
-
-    tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js")
+    tab_items
   )
 
 

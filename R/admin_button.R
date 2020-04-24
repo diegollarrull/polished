@@ -44,8 +44,12 @@ admin_button <- function(input, output, session) {
       )
     )
 
+
     # clear signed in as in .global_sessions
-    .global_sessions$clear_signed_in_as(session$userData$user()$token)
+    .global_sessions$set_signed_in_as(
+      session$userData$user()$session_uid,
+      NA
+    )
 
     # remove admin_panel=false from query
     shiny::updateQueryString(

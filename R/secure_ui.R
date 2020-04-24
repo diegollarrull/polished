@@ -1,13 +1,13 @@
 #' Secure the Shiny Application UI
 #'
 #' @param ui UI of the application.
-#' @param firebase_config Firebase configuration.
 #' @param sign_in_page_ui Either `NULL`, the default, or the HTML, CSS, and JavaScript
 #' to use for the UI of the Sign In page.
 #' @param custom_admin_ui Either `NULL`, the default, or a list of 2 elements containing custom
 #' ui to add addtional `shinydashboard` tabs to the Polished admin panel.
 #' @param custom_admin_button_ui Either `admin_button_ui("polished")`, the default, ot your custom
 #' ui to take admins from the custom Shiny app to the Admin panel.
+#' @param admin_ui_options list of custom UI options.  Passed as argument to `admin_module_ui()`.
 #'
 #' @return Secured Shiny app ui
 #'
@@ -16,35 +16,53 @@
 #' @importFrom shiny fluidPage fluidRow column actionButton parseQueryString
 #' @importFrom htmltools tagList h1 tags
 #' @importFrom digest digest
+#' @importFrom uuid UUIDgenerate
 #'
 #'
 secure_ui <- function(
   ui,
-  firebase_config,
   sign_in_page_ui = NULL,
   custom_admin_ui = NULL,
-  custom_admin_button_ui = admin_button_ui("polished")
+  custom_admin_button_ui = admin_button_ui("polished"),
+  admin_ui_options = default_admin_ui_options()
 ) {
 
   ui <- force(ui)
   custom_admin_button_ui <- force(custom_admin_button_ui)
 
   function(request) {
+
+    if (isTRUE(.global_sessions$get_admin_mode())) {
+
+      # go to Admin Panel
+      return(tagList(
+        admin_module_ui(
+          "admin",
+          custom_admin_ui,
+          options = admin_ui_options,
+          include_go_to_shiny_app_button = FALSE
+        ),
+        tags$script(src = "polish/js/polished_session.js?version=2"),
+        tags$script(paste0("polished_session('", uuid::UUIDgenerate(), "')"))
+      ))
+
+    }
+
     query <- shiny::parseQueryString(request$QUERY_STRING)
 
     cookie_string <- request$HTTP_COOKIE
 
-    polished_token <- NULL
+    hashed_cookie <- NULL
     if (!is.null(cookie_string)) {
-      polished_cookie <- get_cookie(cookie_string, "polished__token")
-      polished_token <- digest::digest(polished_cookie)
+      polished_cookie <- get_cookie(cookie_string, "polished")
+      hashed_cookie <- digest::digest(polished_cookie)
     }
 
 
     user <- NULL
-    if (!is.null(polished_token) && length(polished_token) > 0) {
+    if (!is.null(hashed_cookie) && length(hashed_cookie) > 0) {
       tryCatch({
-        user <- .global_sessions$find(polished_token)
+        user <- .global_sessions$find(hashed_cookie)
       }, error = function(error) {
         print("sign_in_ui_1")
         print(error)
@@ -53,22 +71,37 @@ secure_ui <- function(
 
 
     page_out <- NULL
+
     if (is.null(user)) {
 
-      # go to the sign in page
-      if (is.null(sign_in_page_ui)) {
+      page_query <- query$page
 
-        # go to default sign in page
-        page_out <- tagList(
-          sign_in_ui_default(firebase_config)
-        )
+      if (identical(page_query, "sign_in")) {
+        # go to the sign in page
+        if (is.null(sign_in_page_ui)) {
+
+          # go to default sign in page
+          page_out <- tagList(
+            sign_in_ui_default()
+          )
+
+        } else {
+
+          # go to custom sign in page
+          page_out <- tagList(
+            sign_in_page_ui
+          )
+        }
       } else {
 
-        # go to custom sign in page
+        # send a random uuid as the polished_session.  This will trigger a session
+        # reload and a redirect to the sign in page
         page_out <- tagList(
-          sign_in_page_ui
+          tags$script(src = "polish/js/polished_session.js?version=2"),
+          tags$script(paste0("polished_session('", uuid::UUIDgenerate(), "')"))
         )
       }
+
 
     } else {
 
@@ -82,19 +115,18 @@ secure_ui <- function(
 
             # go to Admin Panel
             page_out <- tagList(
-              admin_module_ui("admin", firebase_config, custom_admin_ui),
-              tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
-              tags$script(src = "polish/js/polished_session.js"),
-              tags$script(paste0("polished_session('", user$token, "')"))
+              admin_module_ui("admin", custom_admin_ui, options = admin_ui_options),
+              tags$script(src = "polish/js/polished_session.js?version=2"),
+              tags$script(paste0("polished_session('", user$hashed_cookie, "')"))
             )
           } else {
 
+            # go to Shiny app with admin button.  User is an admin.
             page_out <- tagList(
               ui,
               custom_admin_button_ui,
-              tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
-              tags$script(src = "polish/js/polished_session.js"),
-              tags$script(paste0("polished_session('", user$token, "')"))
+              tags$script(src = "polish/js/polished_session.js?version=2"),
+              tags$script(paste0("polished_session('", user$hashed_cookie, "')"))
             )
           }
 
@@ -104,9 +136,8 @@ secure_ui <- function(
           # go to Shiny app without admin button.  User is not an admin
           page_out <- tagList(
             ui,
-            tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
-            tags$script(src = "polish/js/polished_session.js"),
-            tags$script(paste0("polished_session('", user$token, "')"))
+            tags$script(src = "polish/js/polished_session.js?version=2"),
+            tags$script(paste0("polished_session('", user$hashed_cookie, "')"))
           )
 
         } # end is_admin check
@@ -115,13 +146,11 @@ secure_ui <- function(
         # go to email verification page
 
         page_out <- tagList(
-          verify_email_ui(
-            "verify",
-            firebase_config
+          verify_email_module_ui(
+            "verify"
           ),
-          tags$script(src = "https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"),
-          tags$script(src = "polish/js/polished_session.js"),
-          tags$script(paste0("polished_session('", user$token, "')"))
+          tags$script(src = "polish/js/polished_session.js?version=2"),
+          tags$script(paste0("polished_session('", user$hashed_cookie, "')"))
         )
       }
 

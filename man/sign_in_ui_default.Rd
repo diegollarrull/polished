@@ -4,10 +4,30 @@
 \alias{sign_in_ui_default}
 \title{sign_in_ui_default}
 \usage{
-sign_in_ui_default(firebase_config)
+sign_in_ui_default(
+  sign_in_module = sign_in_module_ui("sign_in"),
+  color = "#2491EB",
+  company_name = "Tychobra LLC",
+  logo_top = tags$img(src = "polish/images/polished_logo_transparent_white.png", width
+    = "100px", style = "padding-top: 15px; padding-bottom: 15px;"),
+  logo_bottom = tags$img(src = "polish/images/polished_logo_transparent_text_2.png",
+    alt = "Polished Logo", style =
+    "width: 200px; margin-bottom: 15px; padding-top: 15px;"),
+  icon_href = "polish/images/polished_icon.png"
+)
 }
 \arguments{
-\item{firebase_config}{Firebase configuration}
+\item{sign_in_module}{UI module for the sign-in page}
+
+\item{color}{hex color for the background and button}
+
+\item{company_name}{your company name}
+
+\item{logo_top}{html for logo to go above the sign in panel.}
+
+\item{logo_bottom}{html for the logo below the sign in panel.}
+
+\item{icon_href}{the url/path to the browser tab icon}
 }
 \value{
 the UI for the sign in page

@@ -1,11 +1,11 @@
 Package: polished
 Type: Package
 Title: Authentication and Administration for Shiny apps
-Version: 0.0.5.9000
+Version: 0.0.5.9003
 Author: person("Andy", "Merlino", email = "andy.merlino@tychobra.com", role = c("aut", "cre"))
 Maintainer: Andy Merlino <andy.merlino@tychobra.com>
 Description: Authentication and Administration for Shiny apps.
-License: MIT + file LICENSE
+License: file LICENSE
 Encoding: UTF-8
 LazyData: true
 Imports:
@@ -32,7 +32,10 @@ Imports:
     shinytoastr,
     shinyWidgets,
     rlang,
-    purrr
+    purrr,
+    uuid,
+    jose,
+    stringr
 Remotes: 
     github::tychobra/tychobratools
-RoxygenNote: 7.0.2
+RoxygenNote: 7.1.0

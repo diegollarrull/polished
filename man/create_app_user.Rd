@@ -6,27 +6,31 @@
 \usage{
 create_app_user(
   conn,
-  app_name,
+  app_uid,
   email,
   is_admin = FALSE,
-  roles = character(0),
-  created_by = NULL
+  created_by = NULL,
+  modified_by = NULL,
+  schema = "polished"
 )
 }
 \arguments{
 \item{conn}{the database connection.}
 
-\item{app_name}{the name of the Shiny app.}
+\item{app_uid}{the name of the Shiny app.}
 
 \item{email}{the email address of the first user.}
 
 \item{is_admin}{boolean that defaults to FALSE.  Whether or not the user being created
 is an admin.}
 
-\item{roles}{A character vector of the new user's roles.  Defaults to `character(0)`}
-
-\item{created_by}{uid of the user that creating this user.  If `NULL`, the default, then the
+\item{created_by}{uid of the user creating this user.  If `NULL`, the default, then the
 user uid of the user being created will be used.}
+
+\item{modified_by}{uid of the user creating this user.  If `NULL`, the default, then the
+value of `created_by` will be used.}
+
+\item{schema}{the database schema}
 }
 \description{
 Add the first user to the "polished" schema
